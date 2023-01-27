@@ -17,9 +17,7 @@ const (
 	defaultUploadCutoff        = fs.SizeSuffix(200 * 1024 * 1024)
 	defaultUploadConcurrency   = 10
 	maxUploadCutoff            = fs.SizeSuffix(5 * 1024 * 1024 * 1024)
-	minSleep                   = 100 * time.Millisecond
-	maxSleep                   = 5 * time.Minute
-	decayConstant              = 1 // bigger for slower decay, exponential
+	minSleep                   = 10 * time.Millisecond
 	defaultCopyTimeoutDuration = fs.Duration(time.Minute)
 )
 
@@ -122,6 +120,22 @@ func newOptions() []fs.Option {
 		Examples: []fs.OptionExample{{
 			Value: "Default",
 			Help:  "Use the default profile",
+		}},
+	}, {
+		// Mapping from here: https://github.com/oracle/oci-go-sdk/blob/master/objectstorage/storage_tier.go
+		Name:     "storage_tier",
+		Help:     "The storage class to use when storing new objects in storage. https://docs.oracle.com/en-us/iaas/Content/Object/Concepts/understandingstoragetiers.htm",
+		Default:  "Standard",
+		Advanced: true,
+		Examples: []fs.OptionExample{{
+			Value: "Standard",
+			Help:  "Standard storage tier, this is the default tier",
+		}, {
+			Value: "InfrequentAccess",
+			Help:  "InfrequentAccess storage tier",
+		}, {
+			Value: "Archive",
+			Help:  "Archive storage tier",
 		}},
 	}, {
 		Name: "upload_cutoff",

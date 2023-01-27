@@ -455,6 +455,7 @@ Properties:
     - "off"
         - Don't encrypt the file names.
         - Adds a ".bin" extension only.
+        - May cause problems on [case insensitive](/overview/#case-insensitive) [storage systems](/overview/#features) like OneDrive, Dropbox, Windows, OSX and SMB.
 
 #### --crypt-directory-name-encryption
 
@@ -473,6 +474,7 @@ Properties:
         - Encrypt directory names.
     - "false"
         - Don't encrypt directory names, leave them intact.
+        - May cause problems on [case insensitive](/overview/#case-insensitive) [storage systems](/overview/#features) like OneDrive, Dropbox, Windows, OSX and SMB.
 
 #### --crypt-password
 
@@ -660,7 +662,7 @@ as `eremote:`.
 
 To sync the two remotes you would do
 
-    rclone sync -i remote:crypt remote2:crypt
+    rclone sync --interactive remote:crypt remote2:crypt
 
 And to check the integrity you would do
 
