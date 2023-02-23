@@ -10,7 +10,7 @@ require (
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358
 	github.com/Max-Sum/base32768 v0.0.0-20191205131208-7937843c71d5
 	github.com/Unknwon/goconfig v1.0.0
-	github.com/a8m/tree v0.0.0-20210414114729-ce3525c5c2ef
+	github.com/a8m/tree v0.0.0-20230208161321-36ae24ddad15
 	github.com/aalpar/deheap v0.0.0-20210914013432-0cc84d79dec3
 	github.com/abbot/go-http-auth v0.4.0
 	github.com/anacrolix/dms v1.5.0
@@ -41,9 +41,9 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/ncw/go-acd v0.0.0-20201019170801-fe55f33415b1
 	github.com/ncw/swift/v2 v2.0.1
-	github.com/oracle/oci-go-sdk/v65 v65.28.0
+	github.com/oracle/oci-go-sdk/v65 v65.30.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/pkg/sftp v1.13.5
+	github.com/pkg/sftp v1.13.6-0.20230213180117-971c283182b6
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/putdotio/go-putio/putio v0.0.0-20200123120452-16d982cac2b8
@@ -64,11 +64,11 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	goftp.io/server v0.4.1
 	golang.org/x/crypto v0.5.0
-	golang.org/x/net v0.5.0
+	golang.org/x/net v0.7.0
 	golang.org/x/oauth2 v0.4.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.4.0
-	golang.org/x/text v0.6.0
+	golang.org/x/sys v0.5.0
+	golang.org/x/text v0.7.0
 	golang.org/x/time v0.3.0
 	google.golang.org/api v0.106.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -146,5 +146,5 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/pkg/xattr v0.4.9
 	golang.org/x/mobile v0.0.0-20221110043201-43a038452099
-	golang.org/x/term v0.4.0
+	golang.org/x/term v0.5.0
 )
