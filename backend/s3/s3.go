@@ -2266,6 +2266,11 @@ rclone's choice here.
 			Help:     `Suppress setting and reading of system metadata`,
 			Advanced: true,
 			Default:  false,
+		}, {
+			Name:     "sts_endpoint",
+			Help:     "Endpoint for STS.\n\nLeave blank if using AWS to use the default endpoint for the region.",
+			Provider: "AWS",
+			Advanced: true,
 		},
 		}})
 }
@@ -2352,6 +2357,7 @@ type Options struct {
 	SecretAccessKey       string               `config:"secret_access_key"`
 	Region                string               `config:"region"`
 	Endpoint              string               `config:"endpoint"`
+	STSEndpoint           string               `config:"sts_endpoint"`
 	LocationConstraint    string               `config:"location_constraint"`
 	ACL                   string               `config:"acl"`
 	BucketACL             string               `config:"bucket_acl"`
@@ -2560,6 +2566,38 @@ func getClient(ctx context.Context, opt *Options) *http.Client {
 	}
 }
 
+// Default name resolver
+var defaultResolver = endpoints.DefaultResolver()
+
+// resolve (service, region) to endpoint
+//
+// Used to set endpoint for s3 services and not for other services
+type resolver map[string]string
+
+// Add a service to the resolver, ignoring empty urls
+func (r resolver) addService(service, url string) {
+	if url == "" {
+		return
+	}
+	if !strings.HasPrefix(url, "http") {
+		url = "https://" + url
+	}
+	r[service] = url
+}
+
+// EndpointFor return the endpoint for s3 if set or the default if not
+func (r resolver) EndpointFor(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+	fs.Debugf(nil, "Resolving service %q region %q", service, region)
+	url, ok := r[service]
+	if ok {
+		return endpoints.ResolvedEndpoint{
+			URL:           url,
+			SigningRegion: region,
+		}, nil
+	}
+	return defaultResolver.EndpointFor(service, region, opts...)
+}
+
 // s3Connection makes a connection to s3
 func s3Connection(ctx context.Context, opt *Options, client *http.Client) (*s3.S3, *session.Session, error) {
 	ci := fs.GetConfig(ctx)
@@ -2638,8 +2676,12 @@ func s3Connection(ctx context.Context, opt *Options, client *http.Client) (*s3.S
 	if opt.Region != "" {
 		awsConfig.WithRegion(opt.Region)
 	}
-	if opt.Endpoint != "" {
-		awsConfig.WithEndpoint(opt.Endpoint)
+	if opt.Endpoint != "" || opt.STSEndpoint != "" {
+		// If endpoints are set, override the relevant services only
+		r := make(resolver)
+		r.addService("s3", opt.Endpoint)
+		r.addService("sts", opt.STSEndpoint)
+		awsConfig.WithEndpointResolver(r)
 	}
 
 	// awsConfig.WithLogLevel(aws.LogDebugWithSigning)
