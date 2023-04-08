@@ -377,6 +377,14 @@ func (s *syncCopyMove) pairChecker(in *pipe, out *pipe, fraction int, wg *sync.W
 						fs.Logf(src, "Not removing source file as it is the same file as the destination")
 					} else if s.ci.IgnoreExisting {
 						fs.Debugf(src, "Not removing source file as destination file exists and --ignore-existing is set")
+					} else if s.checkFirst && s.ci.OrderBy != "" {
+						// If we want perfect ordering then use the transfers to delete the file
+						//
+						// We send src == dst, to say we want the src deleted
+						ok = out.Put(s.ctx, fs.ObjectPair{Src: src, Dst: src})
+						if !ok {
+							return
+						}
 					} else {
 						s.processError(operations.DeleteFile(s.ctx, src))
 					}
@@ -399,6 +407,7 @@ func (s *syncCopyMove) pairRenamer(in *pipe, out *pipe, fraction int, wg *sync.W
 		src := pair.Src
 		if !s.tryRename(src) {
 			// pass on if not renamed
+			fs.Debugf(src, "Need to transfer - No matching file found at Destination")
 			ok = out.Put(s.ctx, pair)
 			if !ok {
 				return
@@ -417,10 +426,16 @@ func (s *syncCopyMove) pairCopyOrMove(ctx context.Context, in *pipe, fdst fs.Fs,
 			return
 		}
 		src := pair.Src
+		dst := pair.Dst
 		if s.DoMove {
-			_, err = operations.Move(ctx, fdst, pair.Dst, src.Remote(), src)
+			if src != dst {
+				_, err = operations.Move(ctx, fdst, dst, src.Remote(), src)
+			} else {
+				// src == dst signals delete the src
+				err = operations.DeleteFile(ctx, src)
+			}
 		} else {
-			_, err = operations.Copy(ctx, fdst, pair.Dst, src.Remote(), src)
+			_, err = operations.Copy(ctx, fdst, dst, src.Remote(), src)
 		}
 		s.processError(err)
 	}
@@ -1012,6 +1027,7 @@ func (s *syncCopyMove) SrcOnly(src fs.DirEntry) (recurse bool) {
 			}
 			if !NoNeedTransfer {
 				// No need to check since doesn't exist
+				fs.Debugf(src, "Need to transfer - File not found at Destination")
 				ok := s.toBeUploaded.Put(s.ctx, fs.ObjectPair{Src: x, Dst: nil})
 				if !ok {
 					return

@@ -265,7 +265,7 @@ At the time of writing this only works with OneDrive personal paid accounts.
 			Help: `Specify the hash in use for the backend.
 
 This specifies the hash type in use. If set to "auto" it will use the
-default hash which is is QuickXorHash.
+default hash which is QuickXorHash.
 
 Before rclone 1.62 an SHA1 hash was used by default for Onedrive
 Personal. For 1.62 and later the default is to use a QuickXorHash for
@@ -1724,6 +1724,10 @@ func (f *Fs) CleanUp(ctx context.Context) error {
 	token := make(chan struct{}, f.ci.Checkers)
 	var wg sync.WaitGroup
 	err := walk.Walk(ctx, f, "", true, -1, func(path string, entries fs.DirEntries, err error) error {
+		if err != nil {
+			fs.Errorf(f, "Failed to list %q: %v", path, err)
+			return nil
+		}
 		err = entries.ForObjectError(func(obj fs.Object) error {
 			o, ok := obj.(*Object)
 			if !ok {

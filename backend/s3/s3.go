@@ -1,4 +1,4 @@
-// Package s3 provides an interface to Amazon S3 oject storage
+// Package s3 provides an interface to Amazon S3 object storage
 package s3
 
 //go:generate go run gen_setfrom.go -o setfrom.go
@@ -66,7 +66,7 @@ import (
 func init() {
 	fs.Register(&fs.RegInfo{
 		Name:        "s3",
-		Description: "Amazon S3 Compliant Storage Providers including AWS, Alibaba, Ceph, China Mobile, Cloudflare, ArvanCloud, DigitalOcean, Dreamhost, Huawei OBS, IBM COS, IDrive e2, IONOS Cloud, Liara, Lyve Cloud, Minio, Netease, RackCorp, Scaleway, SeaweedFS, StackPath, Storj, Tencent COS, Qiniu and Wasabi",
+		Description: "Amazon S3 Compliant Storage Providers including AWS, Alibaba, Ceph, China Mobile, Cloudflare, GCS, ArvanCloud, DigitalOcean, Dreamhost, Huawei OBS, IBM COS, IDrive e2, IONOS Cloud, Liara, Lyve Cloud, Minio, Netease, RackCorp, Scaleway, SeaweedFS, StackPath, Storj, Tencent COS, Qiniu and Wasabi",
 		NewFs:       NewFs,
 		CommandHelp: commandHelp,
 		Config: func(ctx context.Context, name string, m configmap.Mapper, config fs.ConfigIn) (*fs.ConfigOut, error) {
@@ -109,6 +109,9 @@ func init() {
 			}, {
 				Value: "Dreamhost",
 				Help:  "Dreamhost DreamObjects",
+			}, {
+				Value: "GCS",
+				Help:  "Google Cloud Storage",
 			}, {
 				Value: "HuaweiOBS",
 				Help:  "Huawei Object Storage Service",
@@ -936,6 +939,14 @@ func init() {
 			}},
 		}, {
 			Name:     "endpoint",
+			Help:     "Endpoint for Google Cloud Storage.",
+			Provider: "GCS",
+			Examples: []fs.OptionExample{{
+				Value: "https://storage.googleapis.com",
+				Help:  "Google Cloud Storage endpoint",
+			}},
+		}, {
+			Name:     "endpoint",
 			Help:     "Endpoint for Storj Gateway.",
 			Provider: "Storj",
 			Examples: []fs.OptionExample{{
@@ -1098,7 +1109,7 @@ func init() {
 		}, {
 			Name:     "endpoint",
 			Help:     "Endpoint for S3 API.\n\nRequired when using an S3 clone.",
-			Provider: "!AWS,IBMCOS,IDrive,IONOS,TencentCOS,HuaweiOBS,Alibaba,ChinaMobile,Liara,ArvanCloud,Scaleway,StackPath,Storj,RackCorp,Qiniu",
+			Provider: "!AWS,IBMCOS,IDrive,IONOS,TencentCOS,HuaweiOBS,Alibaba,ChinaMobile,GCS,Liara,ArvanCloud,Scaleway,StackPath,Storj,RackCorp,Qiniu",
 			Examples: []fs.OptionExample{{
 				Value:    "objects-us-east-1.dream.io",
 				Help:     "Dream Objects endpoint",
@@ -2262,6 +2273,24 @@ rclone's choice here.
 			Default:  fs.Tristate{},
 			Advanced: true,
 		}, {
+			Name: "use_accept_encoding_gzip",
+			Help: strings.ReplaceAll(`Whether to send |Accept-Encoding: gzip| header.
+
+By default, rclone will append |Accept-Encoding: gzip| to the request to download
+compressed objects whenever possible.
+
+However some providers such as Google Cloud Storage may alter the HTTP headers, breaking
+the signature of the request.
+
+A symptom of this would be receiving errors like
+
+	SignatureDoesNotMatch: The request signature we calculated does not match the signature you provided.
+
+In this case, you might want to try disabling this option.
+`, "|", "`"),
+			Default:  fs.Tristate{},
+			Advanced: true,
+		}, {
 			Name:     "no_system_metadata",
 			Help:     `Suppress setting and reading of system metadata`,
 			Advanced: true,
@@ -2399,6 +2428,7 @@ type Options struct {
 	VersionAt             fs.Time              `config:"version_at"`
 	Decompress            bool                 `config:"decompress"`
 	MightGzip             fs.Tristate          `config:"might_gzip"`
+	UseAcceptEncodingGzip fs.Tristate          `config:"use_accept_encoding_gzip"`
 	NoSystemMetadata      bool                 `config:"no_system_metadata"`
 }
 
@@ -2791,11 +2821,12 @@ func setEndpointValueForIDriveE2(m configmap.Mapper) (err error) {
 // These should be differences from AWS S3
 func setQuirks(opt *Options) {
 	var (
-		listObjectsV2     = true
-		virtualHostStyle  = true
-		urlEncodeListings = true
-		useMultipartEtag  = true
-		mightGzip         = true // assume all providers might gzip until proven otherwise
+		listObjectsV2         = true
+		virtualHostStyle      = true
+		urlEncodeListings     = true
+		useMultipartEtag      = true
+		useAcceptEncodingGzip = true
+		mightGzip             = true // assume all providers might gzip until proven otherwise
 	)
 	switch opt.Provider {
 	case "AWS":
@@ -2880,6 +2911,10 @@ func setQuirks(opt *Options) {
 	case "Qiniu":
 		useMultipartEtag = false
 		urlEncodeListings = false
+	case "GCS":
+		// Google break request Signature by mutating accept-encoding HTTP header
+		// https://github.com/rclone/rclone/issues/6670
+		useAcceptEncodingGzip = false
 	case "Other":
 		listObjectsV2 = false
 		virtualHostStyle = false
@@ -2924,6 +2959,12 @@ func setQuirks(opt *Options) {
 		opt.MightGzip.Valid = true
 		opt.MightGzip.Value = mightGzip
 	}
+
+	// set UseAcceptEncodingGzip if not manually set
+	if !opt.UseAcceptEncodingGzip.Valid {
+		opt.UseAcceptEncodingGzip.Valid = true
+		opt.UseAcceptEncodingGzip.Value = useAcceptEncodingGzip
+	}
 }
 
 // setRoot changes the root of the Fs
@@ -2957,7 +2998,7 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 		return nil, fmt.Errorf("s3: upload cutoff: %w", err)
 	}
 	if opt.Versions && opt.VersionAt.IsSet() {
-		return nil, errors.New("s3: cant use --s3-versions and --s3-version-at at the same time")
+		return nil, errors.New("s3: can't use --s3-versions and --s3-version-at at the same time")
 	}
 	if opt.BucketACL == "" {
 		opt.BucketACL = opt.ACL
@@ -3078,6 +3119,7 @@ func (f *Fs) getMetaDataListing(ctx context.Context, wantRemote string) (info *s
 	err = f.list(ctx, listOpt{
 		bucket:       bucket,
 		directory:    bucketPath,
+		prefix:       f.rootDirectory,
 		recurse:      true,
 		withVersions: f.opt.Versions,
 		findFile:     true,
@@ -3483,10 +3525,10 @@ type listOpt struct {
 // list lists the objects into the function supplied with the opt
 // supplied.
 func (f *Fs) list(ctx context.Context, opt listOpt, fn listFn) error {
+	if opt.prefix != "" {
+		opt.prefix += "/"
+	}
 	if !opt.findFile {
-		if opt.prefix != "" {
-			opt.prefix += "/"
-		}
 		if opt.directory != "" {
 			opt.directory += "/"
 		}
@@ -4962,7 +5004,9 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 
 	// Override the automatic decompression in the transport to
 	// download compressed files as-is
-	httpReq.HTTPRequest.Header.Set("Accept-Encoding", "gzip")
+	if o.fs.opt.UseAcceptEncodingGzip.Value {
+		httpReq.HTTPRequest.Header.Set("Accept-Encoding", "gzip")
+	}
 
 	for _, option := range options {
 		switch option.(type) {
@@ -5078,7 +5122,9 @@ func (o *Object) uploadMultipart(ctx context.Context, req *s3.PutObjectInput, si
 	}
 	uid := cout.UploadId
 
+	uploadCtx, cancel := context.WithCancel(ctx)
 	defer atexit.OnError(&err, func() {
+		cancel()
 		if o.fs.opt.LeavePartsOnError {
 			return
 		}
@@ -5098,7 +5144,7 @@ func (o *Object) uploadMultipart(ctx context.Context, req *s3.PutObjectInput, si
 	})()
 
 	var (
-		g, gCtx  = errgroup.WithContext(ctx)
+		g, gCtx  = errgroup.WithContext(uploadCtx)
 		finished = false
 		partsMu  sync.Mutex // to protect parts
 		parts    []*s3.CompletedPart
@@ -5180,7 +5226,7 @@ func (o *Object) uploadMultipart(ctx context.Context, req *s3.PutObjectInput, si
 				uout, err := f.c.UploadPartWithContext(gCtx, uploadPartReq)
 				if err != nil {
 					if partNum <= int64(concurrency) {
-						return f.shouldRetry(ctx, err)
+						return f.shouldRetry(gCtx, err)
 					}
 					// retry all chunks once have done the first batch
 					return true, err
@@ -5212,7 +5258,7 @@ func (o *Object) uploadMultipart(ctx context.Context, req *s3.PutObjectInput, si
 
 	var resp *s3.CompleteMultipartUploadOutput
 	err = f.pacer.Call(func() (bool, error) {
-		resp, err = f.c.CompleteMultipartUploadWithContext(ctx, &s3.CompleteMultipartUploadInput{
+		resp, err = f.c.CompleteMultipartUploadWithContext(uploadCtx, &s3.CompleteMultipartUploadInput{
 			Bucket: req.Bucket,
 			Key:    req.Key,
 			MultipartUpload: &s3.CompletedMultipartUpload{
@@ -5221,7 +5267,7 @@ func (o *Object) uploadMultipart(ctx context.Context, req *s3.PutObjectInput, si
 			RequestPayer: req.RequestPayer,
 			UploadId:     uid,
 		})
-		return f.shouldRetry(ctx, err)
+		return f.shouldRetry(uploadCtx, err)
 	})
 	if err != nil {
 		return wantETag, gotETag, nil, fmt.Errorf("multipart upload failed to finalise: %w", err)
