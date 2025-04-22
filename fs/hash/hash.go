@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -55,6 +56,16 @@ func RegisterHash(name, alias string, width int, newFunc func() hash.Hash) Type 
 	return hashType
 }
 
+// SupportOnly makes the hash package only support the types passed
+// in. Used for testing.
+//
+// It returns the previously supported types.
+func SupportOnly(new []Type) (old []Type) {
+	old = supported
+	supported = new
+	return old
+}
+
 // ErrUnsupported should be returned by filesystem,
 // if it is requested to deliver an unsupported hash type.
 var ErrUnsupported = errors.New("hash type not supported")
@@ -77,6 +88,9 @@ var (
 
 	// SHA256 indicates SHA-256 support
 	SHA256 Type
+
+	// SHA512 indicates SHA-512 support
+	SHA512 Type
 )
 
 func init() {
@@ -85,6 +99,7 @@ func init() {
 	Whirlpool = RegisterHash("whirlpool", "Whirlpool", 128, whirlpool.New)
 	CRC32 = RegisterHash("crc32", "CRC-32", 8, func() hash.Hash { return crc32.NewIEEE() })
 	SHA256 = RegisterHash("sha256", "SHA-256", 64, sha256.New)
+	SHA512 = RegisterHash("sha512", "SHA-512", 128, sha512.New)
 }
 
 // Supported returns a set of all the supported hashes by

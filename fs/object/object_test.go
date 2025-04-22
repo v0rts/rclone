@@ -34,6 +34,7 @@ func TestStaticObject(t *testing.T) {
 	o = object.NewStaticObjectInfo(remote, now, size, true, nil, nil)
 	_, err = o.Hash(context.Background(), hash.MD5)
 	assert.Equal(t, hash.ErrUnsupported, err)
+	assert.Equal(t, object.MemoryFs, o.Fs())
 
 	hs := map[hash.Type]string{
 		hash.MD5: "potato",
@@ -109,6 +110,7 @@ func TestMemoryObject(t *testing.T) {
 	assert.Equal(t, newNow, o.ModTime(context.Background()))
 
 	checkOpen := func(rc io.ReadCloser, expected string) {
+		t.Helper()
 		actual, err := io.ReadAll(rc)
 		assert.NoError(t, err)
 		err = rc.Close()
@@ -117,6 +119,7 @@ func TestMemoryObject(t *testing.T) {
 	}
 
 	checkContent := func(o fs.Object, expected string) {
+		t.Helper()
 		rc, err := o.Open(context.Background())
 		assert.NoError(t, err)
 		checkOpen(rc, expected)
@@ -126,11 +129,27 @@ func TestMemoryObject(t *testing.T) {
 
 	rc, err := o.Open(context.Background(), &fs.RangeOption{Start: 1, End: 3})
 	assert.NoError(t, err)
-	checkOpen(rc, "ot")
+	checkOpen(rc, "ota")
+
+	rc, err = o.Open(context.Background(), &fs.RangeOption{Start: 1, End: -1})
+	assert.NoError(t, err)
+	checkOpen(rc, "otato")
+
+	rc, err = o.Open(context.Background(), &fs.RangeOption{Start: 1, End: 4096})
+	assert.NoError(t, err)
+	checkOpen(rc, "otato")
+
+	rc, err = o.Open(context.Background(), &fs.RangeOption{Start: -1, End: 4})
+	assert.NoError(t, err)
+	checkOpen(rc, "tato")
 
 	rc, err = o.Open(context.Background(), &fs.SeekOption{Offset: 3})
 	assert.NoError(t, err)
 	checkOpen(rc, "ato")
+
+	rc, err = o.Open(context.Background(), &fs.SeekOption{Offset: -100})
+	assert.NoError(t, err)
+	checkOpen(rc, "potato")
 
 	// check it fits within the buffer
 	newNow = now.Add(2 * time.Minute)
@@ -141,7 +160,7 @@ func TestMemoryObject(t *testing.T) {
 	assert.NoError(t, err)
 	checkContent(o, "Rutabaga")
 	assert.Equal(t, newNow, o.ModTime(context.Background()))
-	assert.Equal(t, "Rutaba", string(content)) // check we re-used the buffer
+	assert.Equal(t, "Rutaba", string(content)) // check we reused the buffer
 
 	// not within the buffer
 	newStr := "0123456789"
@@ -152,7 +171,7 @@ func TestMemoryObject(t *testing.T) {
 	err = o.Update(context.Background(), newContent, src)
 	assert.NoError(t, err)
 	checkContent(o, newStr)
-	assert.Equal(t, "Rutaba", string(content)) // check we didn't re-use the buffer
+	assert.Equal(t, "Rutaba", string(content)) // check we didn't reuse the buffer
 
 	// now try streaming
 	newStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"

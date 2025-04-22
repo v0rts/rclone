@@ -27,7 +27,7 @@ E.g. `rclone copy "remote:dir*.jpg" /path/to/dir` does not have a filter effect.
 `rclone copy remote:dir /path/to/dir --include "*.jpg"` does.
 
 **Important** Avoid mixing any two of `--include...`, `--exclude...` or
-`--filter...` flags in an rclone command. The results may not be what
+`--filter...` flags in an rclone command. The results might not be what
 you expect. Instead use a `--filter...` flag.
 
 ## Patterns for matching path/file names
@@ -88,7 +88,7 @@ separator or the beginning of the path/file.
                - doesn't match "afile.jpg"
                - doesn't match "directory/file.jpg"
 
-The top level of the remote may not be the top level of the drive.
+The top level of the remote might not be the top level of the drive.
 
 E.g. for a Microsoft Windows local directory structure
 
@@ -362,12 +362,12 @@ processed in.
 E.g. `rclone ls remote: --exclude *.bak` excludes all .bak files
 from listing.
 
-E.g. `rclone size remote: "--exclude /dir/**"` returns the total size of
+E.g. `rclone size remote: --exclude "/dir/**"` returns the total size of
 all files on `remote:` excluding those in root directory `dir` and sub
 directories.
 
 E.g. on Microsoft Windows `rclone ls remote: --exclude "*\[{JP,KR,HK}\]*"`
-lists the files in `remote:` with `[JP]` or `[KR]` or `[HK]` in
+lists the files in `remote:` without `[JP]` or `[KR]` or `[HK]` in
 their name. Quotes prevent the shell from interpreting the `\`
 characters.`\` characters escape the `[` and `]` so an rclone filter
 treats them literally rather than as a character-range. The `{` and `}`
@@ -465,10 +465,10 @@ flags with `--exclude`, `--exclude-from`, `--filter` or `--filter-from`,
 you must use include rules for all the files you want in the include
 statement. For more flexibility use the `--filter-from` flag.
 
-`--exclude-from` has no effect when combined with `--files-from` or
+`--include-from` has no effect when combined with `--files-from` or
 `--files-from-raw` flags.
 
-`--exclude-from` followed by `-` reads filter rules from standard input.
+`--include-from` followed by `-` reads filter rules from standard input.
 
 ### `--filter` - Add a file-filtering rule
 
@@ -505,6 +505,8 @@ processed in.
 Arrange the order of filter rules with the most restrictive first and
 work down.
 
+Lines starting with # or ; are ignored, and can be used to write comments. Inline comments are not supported. _Use `-vv --dump filters` to see how they appear in the final regexp._
+
 E.g. for `filter-file.txt`:
 
     # a sample filter rule file
@@ -512,6 +514,7 @@ E.g. for `filter-file.txt`:
     + *.jpg
     + *.png
     + file2.avi
+    - /dir/tmp/** # WARNING! This text will be treated as part of the path.
     - /dir/Trash/**
     + /dir/**
     # exclude everything else
@@ -533,7 +536,7 @@ E.g. for an alternative `filter-file.txt`:
     - *
 
 Files `file1.jpg`, `file3.png` and `file2.avi` are listed whilst
-`secret17.jpg` and files without the suffix .jpg` or `.png` are excluded.
+`secret17.jpg` and files without the suffix `.jpg` or `.png` are excluded.
 
 E.g. for an alternative `filter-file.txt`:
 
@@ -558,6 +561,8 @@ Other filter flags (`--include`, `--include-from`, `--exclude`,
 `--files-from` expects a list of files as its input. Leading or
 trailing whitespace is stripped from the input lines. Lines starting
 with `#` or `;` are ignored.
+
+`--files-from` followed by `-` reads the list of files from standard input.
 
 Rclone commands with a `--files-from` flag traverse the remote,
 treating the names in `--files-from` as a set of filters.
@@ -673,7 +678,7 @@ remote or flag value. The fix then is to quote values containing spaces.
 ### `--min-size` - Don't transfer any file smaller than this
 
 Controls the minimum size file within the scope of an rclone command.
-Default units are `KiB` but abbreviations `K`, `M`, `G`, `T` or `P` are valid.
+Default units are `KiB` but abbreviations `B`, `K`, `M`, `G`, `T` or `P` are valid.
 
 E.g. `rclone ls remote: --min-size 50k` lists files on `remote:` of 50 KiB
 size or larger.
@@ -683,7 +688,7 @@ See [the size option docs](/docs/#size-option) for more info.
 ### `--max-size` - Don't transfer any file larger than this
 
 Controls the maximum size file within the scope of an rclone command.
-Default units are `KiB` but abbreviations `K`, `M`, `G`, `T` or `P` are valid.
+Default units are `KiB` but abbreviations `B`, `K`, `M`, `G`, `T` or `P` are valid.
 
 E.g. `rclone ls remote: --max-size 1G` lists files on `remote:` of 1 GiB
 size or smaller.
@@ -712,6 +717,98 @@ E.g. `rclone ls remote: --min-age 2d` lists files on `remote:` of 2 days
 old or more.
 
 See [the time option docs](/docs/#time-option) for valid formats.
+
+### `--hash-filter` - Deterministically select a subset of files {#hash-filter}
+
+The `--hash-filter` flag enables selecting a deterministic subset of files, useful for:
+
+1. Running large sync operations across multiple machines.
+2. Checking a subset of files for bitrot.
+3. Any other operations where a sample of files is required.
+
+#### Syntax
+
+The flag takes two parameters expressed as a fraction:
+
+```
+--hash-filter K/N
+```
+
+- `N`: The total number of partitions (must be a positive integer).
+- `K`: The specific partition to select (an integer from `0` to `N`).
+
+For example:
+- `--hash-filter 1/3`: Selects the first third of the files.
+- `--hash-filter 2/3` and `--hash-filter 3/3`: Select the second and third partitions, respectively.
+
+Each partition is non-overlapping, ensuring all files are covered without duplication.
+
+#### Random Partition Selection
+
+Use `@` as `K` to randomly select a partition:
+
+```
+--hash-filter @/M
+```
+
+For example, `--hash-filter @/3` will randomly select a number between 0 and 2. This will stay constant across retries.
+
+#### How It Works
+
+- Rclone takes each file's full path, normalizes it to lowercase, and applies Unicode normalization.
+- It then hashes the normalized path into a 64 bit number.
+- The hash result is reduced modulo `N` to assign the file to a partition.
+- If the calculated partition does not match `K` the file is excluded.
+- Other filters may apply if the file is not excluded.
+
+**Important:** Rclone will traverse all directories to apply the filter.
+
+#### Usage Notes
+
+- Safe to use with `rclone sync`; source and destination selections will match.
+- **Do not** use with `--delete-excluded`, as this could delete unselected files.
+- Ignored if `--files-from` is used.
+
+#### Examples
+
+##### Dividing files into 4 partitions
+
+Assuming the current directory contains `file1.jpg` through `file9.jpg`:
+
+```
+$ rclone lsf --hash-filter 0/4 .
+file1.jpg
+file5.jpg
+
+$ rclone lsf --hash-filter 1/4 .
+file3.jpg
+file6.jpg
+file9.jpg
+
+$ rclone lsf --hash-filter 2/4 .
+file2.jpg
+file4.jpg
+
+$ rclone lsf --hash-filter 3/4 .
+file7.jpg
+file8.jpg
+
+$ rclone lsf --hash-filter 4/4 . # the same as --hash-filter 0/4
+file1.jpg
+file5.jpg
+```
+
+##### Syncing the first quarter of files
+
+```
+rclone sync --hash-filter 1/4 source:path destination:path
+```
+
+##### Checking a random 1% of files for integrity
+
+```
+rclone check --download --hash-filter @/100 source:path destination:path
+```
 
 ## Other flags
 

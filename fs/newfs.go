@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,7 +84,7 @@ func ConfigFs(path string) (fsInfo *RegInfo, configName, fsPath string, config *
 	if err != nil {
 		return
 	}
-	config = ConfigMap(fsInfo, configName, connectionStringConfig)
+	config = ConfigMap(fsInfo.Prefix, fsInfo.Options, configName, connectionStringConfig)
 	return
 }
 
@@ -101,10 +102,10 @@ func ParseRemote(path string) (fsInfo *RegInfo, configName, fsPath string, conne
 		if strings.HasPrefix(configName, ":") {
 			fsName = configName[1:]
 		} else {
-			m := ConfigMap(nil, configName, parsed.Config)
+			m := ConfigMap("", nil, configName, parsed.Config)
 			fsName, ok = m.Get("type")
 			if !ok {
-				return nil, "", "", nil, ErrorNotFoundInConfigFile
+				return nil, "", "", nil, fmt.Errorf("%w (%q)", ErrorNotFoundInConfigFile, configName)
 			}
 		}
 	} else {
@@ -115,11 +116,11 @@ func ParseRemote(path string) (fsInfo *RegInfo, configName, fsPath string, conne
 	return fsInfo, configName, fsPath, parsed.Config, err
 }
 
-// ConfigString returns a canonical version of the config string used
+// configString returns a canonical version of the config string used
 // to configure the Fs as passed to fs.NewFs
-func ConfigString(f Fs) string {
+func configString(f Info, full bool) string {
 	name := f.Name()
-	if open := strings.IndexRune(name, '{'); open >= 0 && strings.HasSuffix(name, "}") {
+	if open := strings.IndexRune(name, '{'); full && open >= 0 && strings.HasSuffix(name, "}") {
 		suffix := name[open:]
 		overriddenConfigMu.Lock()
 		config, ok := overriddenConfig[suffix]
@@ -135,6 +136,27 @@ func ConfigString(f Fs) string {
 		return root
 	}
 	return name + ":" + root
+}
+
+// ConfigString returns a canonical version of the config string used
+// to configure the Fs as passed to fs.NewFs. For Fs with extra
+// parameters this will include a canonical {hexstring} suffix.
+func ConfigString(f Info) string {
+	return configString(f, false)
+}
+
+// FullPath returns the full path with remote:path/to/object
+// for an object.
+func FullPath(o Object) string {
+	return fspath.JoinRootPath(ConfigString(o.Fs()), o.Remote())
+}
+
+// ConfigStringFull returns a canonical version of the config string
+// used to configure the Fs as passed to fs.NewFs. This string can be
+// used to re-instantiate the Fs exactly so includes all the extra
+// parameters passed in.
+func ConfigStringFull(f Fs) string {
+	return configString(f, true)
 }
 
 // TemporaryLocalFs creates a local FS in the OS's temporary directory.

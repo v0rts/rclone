@@ -17,8 +17,7 @@ func init() {
 var commandDefinition = &cobra.Command{
 	Use:   "copyto source:path dest:path",
 	Short: `Copy files from source to dest, skipping identical files.`,
-	Long: `
-If source:path is a file or directory then it copies it to a file or
+	Long: `If source:path is a file or directory then it copies it to a file or
 directory named dest:path.
 
 This can be used to upload single files to other than their current
@@ -44,10 +43,13 @@ This doesn't transfer files that are identical on src and dst, testing
 by size and modification time or MD5SUM.  It doesn't delete files from
 the destination.
 
+*If you are looking to copy just a byte range of a file, please see 'rclone cat --offset X --count Y'*
+
 **Note**: Use the ` + "`-P`" + `/` + "`--progress`" + ` flag to view real-time transfer statistics
 `,
 	Annotations: map[string]string{
 		"versionIntroduced": "v1.35",
+		"groups":            "Copy,Filter,Listing,Important",
 	},
 	Run: func(command *cobra.Command, args []string) {
 		cmd.CheckArgs(2, 2, command, args)

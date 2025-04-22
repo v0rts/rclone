@@ -36,14 +36,17 @@ func TestIntegration(t *testing.T) {
 			"GetTier",
 			"SetTier",
 			"Metadata",
+			"SetMetadata",
 		},
 		UnimplementableFsMethods: []string{
 			"PublicLink",
 			"OpenWriterAt",
+			"OpenChunkWriter",
 			"MergeDirs",
 			"DirCacheFlush",
 			"UserInfo",
 			"Disconnect",
+			"ListP",
 		},
 	}
 	if *fstest.RemoteName == "" {

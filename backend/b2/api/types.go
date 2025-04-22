@@ -33,10 +33,19 @@ var _ fserrors.Fataler = (*Error)(nil)
 
 // Bucket describes a B2 bucket
 type Bucket struct {
-	ID        string `json:"bucketId"`
-	AccountID string `json:"accountId"`
-	Name      string `json:"bucketName"`
-	Type      string `json:"bucketType"`
+	ID             string          `json:"bucketId"`
+	AccountID      string          `json:"accountId"`
+	Name           string          `json:"bucketName"`
+	Type           string          `json:"bucketType"`
+	LifecycleRules []LifecycleRule `json:"lifecycleRules,omitempty"`
+}
+
+// LifecycleRule is a single lifecycle rule
+type LifecycleRule struct {
+	DaysFromHidingToDeleting                        *int   `json:"daysFromHidingToDeleting"`
+	DaysFromUploadingToHiding                       *int   `json:"daysFromUploadingToHiding"`
+	DaysFromStartingToCancelingUnfinishedLargeFiles *int   `json:"daysFromStartingToCancelingUnfinishedLargeFiles"`
+	FileNamePrefix                                  string `json:"fileNamePrefix"`
 }
 
 // Timestamp is a UTC time when this file was uploaded. It is a base
@@ -121,10 +130,10 @@ type AuthorizeAccountResponse struct {
 	AbsoluteMinimumPartSize int      `json:"absoluteMinimumPartSize"` // The smallest possible size of a part of a large file.
 	AccountID               string   `json:"accountId"`               // The identifier for the account.
 	Allowed                 struct { // An object (see below) containing the capabilities of this auth token, and any restrictions on using it.
-		BucketID     string      `json:"bucketId"`     // When present, access is restricted to one bucket.
-		BucketName   string      `json:"bucketName"`   // When present, name of bucket - may be empty
-		Capabilities []string    `json:"capabilities"` // A list of strings, each one naming a capability the key has.
-		NamePrefix   interface{} `json:"namePrefix"`   // When present, access is restricted to files whose names start with the prefix
+		BucketID     string   `json:"bucketId"`     // When present, access is restricted to one bucket.
+		BucketName   string   `json:"bucketName"`   // When present, name of bucket - may be empty
+		Capabilities []string `json:"capabilities"` // A list of strings, each one naming a capability the key has.
+		NamePrefix   any      `json:"namePrefix"`   // When present, access is restricted to files whose names start with the prefix
 	} `json:"allowed"`
 	APIURL              string `json:"apiUrl"`              // The base URL to use for all API calls except for uploading and downloading files.
 	AuthorizationToken  string `json:"authorizationToken"`  // An authorization token to use with all calls, other than b2_authorize_account, that need an Authorization header.
@@ -206,9 +215,10 @@ type FileInfo struct {
 
 // CreateBucketRequest is used to create a bucket
 type CreateBucketRequest struct {
-	AccountID string `json:"accountId"`
-	Name      string `json:"bucketName"`
-	Type      string `json:"bucketType"`
+	AccountID      string          `json:"accountId"`
+	Name           string          `json:"bucketName"`
+	Type           string          `json:"bucketType"`
+	LifecycleRules []LifecycleRule `json:"lifecycleRules,omitempty"`
 }
 
 // DeleteBucketRequest is used to create a bucket
@@ -330,4 +340,12 @@ type CopyPartRequest struct {
 	LargeFileID string `json:"largeFileId"`     // The ID of the large file the part will belong to, as returned by b2_start_large_file.
 	PartNumber  int64  `json:"partNumber"`      // Which part this is (starting from 1)
 	Range       string `json:"range,omitempty"` // The range of bytes to copy. If not provided, the whole source file will be copied.
+}
+
+// UpdateBucketRequest describes a request to modify a B2 bucket
+type UpdateBucketRequest struct {
+	ID             string          `json:"bucketId"`
+	AccountID      string          `json:"accountId"`
+	Type           string          `json:"bucketType,omitempty"`
+	LifecycleRules []LifecycleRule `json:"lifecycleRules,omitempty"`
 }

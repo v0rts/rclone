@@ -35,7 +35,7 @@ import (
 	"github.com/rclone/rclone/fs/fserrors"
 	"github.com/rclone/rclone/fs/fshttp"
 	"github.com/rclone/rclone/fs/hash"
-	"github.com/rclone/rclone/fs/walk"
+	"github.com/rclone/rclone/fs/list"
 	"github.com/rclone/rclone/lib/bucket"
 	"github.com/rclone/rclone/lib/encoder"
 	"github.com/rclone/rclone/lib/env"
@@ -62,9 +62,10 @@ const (
 
 var (
 	// Description of how to auth for this app
-	storageConfig = &oauth2.Config{
+	storageConfig = &oauthutil.Config{
 		Scopes:       []string{storage.DevstorageReadWriteScope},
-		Endpoint:     google.Endpoint,
+		AuthURL:      google.Endpoint.AuthURL,
+		TokenURL:     google.Endpoint.TokenURL,
 		ClientID:     rcloneClientID,
 		ClientSecret: obscure.MustReveal(rcloneEncryptedClientSecret),
 		RedirectURL:  oauthutil.RedirectURL,
@@ -91,18 +92,27 @@ func init() {
 			})
 		},
 		Options: append(oauthutil.SharedOptions, []fs.Option{{
-			Name: "project_number",
-			Help: "Project number.\n\nOptional - needed only for list/create/delete buckets - see your developer console.",
+			Name:      "project_number",
+			Help:      "Project number.\n\nOptional - needed only for list/create/delete buckets - see your developer console.",
+			Sensitive: true,
 		}, {
-			Name: "user_project",
-			Help: "User project.\n\nOptional - needed only for requester pays.",
+			Name:      "user_project",
+			Help:      "User project.\n\nOptional - needed only for requester pays.",
+			Sensitive: true,
 		}, {
 			Name: "service_account_file",
 			Help: "Service Account Credentials JSON file path.\n\nLeave blank normally.\nNeeded only if you want use SA instead of interactive login." + env.ShellExpandHelp,
 		}, {
-			Name: "service_account_credentials",
-			Help: "Service Account Credentials JSON blob.\n\nLeave blank normally.\nNeeded only if you want use SA instead of interactive login.",
-			Hide: fs.OptionHideBoth,
+			Name:      "service_account_credentials",
+			Help:      "Service Account Credentials JSON blob.\n\nLeave blank normally.\nNeeded only if you want use SA instead of interactive login.",
+			Hide:      fs.OptionHideBoth,
+			Sensitive: true,
+		}, {
+			Name:      "access_token",
+			Help:      "Short-lived access token.\n\nLeave blank normally.\nNeeded only if you want use short-lived access token instead of interactive login.",
+			Hide:      fs.OptionHideConfigurator,
+			Sensitive: true,
+			Advanced:  true,
 		}, {
 			Name:    "anonymous",
 			Help:    "Access public buckets and objects without credentials.\n\nSet to 'true' if you just want to download files and don't configure credentials.",
@@ -376,6 +386,7 @@ type Options struct {
 	Enc                       encoder.MultiEncoder `config:"encoding"`
 	EnvAuth                   bool                 `config:"env_auth"`
 	DirectoryMarkers          bool                 `config:"directory_markers"`
+	AccessToken               string               `config:"access_token"`
 }
 
 // Fs represents a remote storage server
@@ -532,6 +543,9 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (fs.Fs, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to configure Google Cloud Storage: %w", err)
 		}
+	} else if opt.AccessToken != "" {
+		ts := oauth2.Token{AccessToken: opt.AccessToken}
+		oAuthClient = oauth2.NewClient(ctx, oauth2.StaticTokenSource(&ts))
 	} else {
 		oAuthClient, _, err = oauthutil.NewClient(ctx, name, m, storageConfig)
 		if err != nil {
@@ -690,19 +704,19 @@ func (f *Fs) list(ctx context.Context, bucket, directory, prefix string, addBuck
 				fs.Logf(f, "Odd name received %q", object.Name)
 				continue
 			}
-			remote = remote[len(prefix):]
 			isDirectory := remote == "" || strings.HasSuffix(remote, "/")
-			if addBucket {
-				remote = path.Join(bucket, remote)
-			}
 			// is this a directory marker?
 			if isDirectory {
 				// Don't insert the root directory
-				if remote == directory {
+				if remote == f.opt.Enc.ToStandardPath(directory) {
 					continue
 				}
 				// process directory markers as directories
 				remote = strings.TrimRight(remote, "/")
+			}
+			remote = remote[len(prefix):]
+			if addBucket {
+				remote = path.Join(bucket, remote)
 			}
 
 			err = fn(remote, object, isDirectory)
@@ -831,7 +845,7 @@ func (f *Fs) List(ctx context.Context, dir string) (entries fs.DirEntries, err e
 // of listing recursively that doing a directory traversal.
 func (f *Fs) ListR(ctx context.Context, dir string, callback fs.ListRCallback) (err error) {
 	bucket, directory := f.split(dir)
-	list := walk.NewListRHelper(callback)
+	list := list.NewHelper(callback)
 	listR := func(bucket, directory, prefix string, addBucket bool) error {
 		return f.list(ctx, bucket, directory, prefix, addBucket, true, func(remote string, object *storage.Object, isDirectory bool) error {
 			entry, err := f.itemToDirEntry(ctx, remote, object, isDirectory)
@@ -941,7 +955,6 @@ func (f *Fs) Mkdir(ctx context.Context, dir string) (err error) {
 		return e
 	}
 	return f.createDirectoryMarker(ctx, bucket, dir)
-
 }
 
 // mkdirParent creates the parent bucket/directory if it doesn't exist
@@ -1307,10 +1320,11 @@ func (o *Object) Storable() bool {
 
 // Open an object for read
 func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.ReadCloser, err error) {
+	url := o.url
 	if o.fs.opt.UserProject != "" {
-		o.url = o.url + "&userProject=" + o.fs.opt.UserProject
+		url += "&userProject=" + o.fs.opt.UserProject
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", o.url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
